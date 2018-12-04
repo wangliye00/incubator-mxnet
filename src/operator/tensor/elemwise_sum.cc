@@ -20,10 +20,13 @@
 /*!
  * Copyright (c) 2015 by Contributors
  * \file elemwise_sum.cc
- * \brief elementwise sum operator
+ * \brief CPU implementation of elementwise sum operator
 */
 #include "./elemwise_sum.h"
 #include "../../ndarray/ndarray_function.h"
+#include "../nn/mkldnn/mkldnn_ops-inl.h"
+#include "../nn/mkldnn/mkldnn_base-inl.h"
+#include "../../common/utils.h"
 
 namespace mxnet {
 namespace op {
@@ -79,9 +82,28 @@ bool ElementWiseSumForwardInferStorageType(const nnvm::NodeAttrs& attrs,
                                            std::vector<int> *out_attrs) {
   CHECK(!in_attrs->empty());
   CHECK_EQ(out_attrs->size(), 1U);
-  return ElemwiseStorageAttr<false, true, false>(attrs, dev_mask, dispatch_mode,
-                                                 in_attrs, out_attrs);
+  bool ret = ElemwiseStorageAttr<false, true, false>(attrs, dev_mask, dispatch_mode,
+                                                     in_attrs, out_attrs);
+#if MXNET_USE_MKLDNN == 1
+  // We should always use FComputeEx.
+  if (dev_mask == mshadow::cpu::kDevMask
+      && common::ContainsOnlyStorage(*in_attrs, kDefaultStorage)
+      && out_attrs->at(0) == kDefaultStorage) {
+    *dispatch_mode = DispatchMode::kFComputeEx;
+  }
+#endif
+  return ret;
 }
+
+#if MXNET_USE_MKLDNN == 1
+static inline bool IsMKLDNNData(const std::vector<NDArray> &arrs) {
+  for (auto &arr : arrs) {
+    if (!arr.IsMKLDNNData())
+      return false;
+  }
+  return true;
+}
+#endif
 
 void ElementWiseSumComputeExCPU(const nnvm::NodeAttrs& attrs,
                                 const OpContext& ctx,
@@ -92,13 +114,22 @@ void ElementWiseSumComputeExCPU(const nnvm::NodeAttrs& attrs,
   CHECK_EQ(outputs.size(), 1U);
   CHECK_EQ(req.size(), 1U);
   if (req[0] == kNullOp) return;
-  CHECK_EQ(req[0], kWriteTo) << "ElementWiseSumComputeExCPU only supports req = kWriteTo";
-  if (inputs[0].storage_type() == kRowSparseStorage) {
+  if (common::ContainsOnlyStorage(inputs, kRowSparseStorage) ||
+      (inputs.size() == 3U && inputs[0].storage_type() == kDefaultStorage &&
+       inputs[1].storage_type() == kCSRStorage && inputs[2].storage_type() == kDefaultStorage) ||
+      (inputs.size() > 4U && common::ContainsStorageType(inputs, kDefaultStorage) &&
+       outputs[0].storage_type() == kDefaultStorage)) {
     mshadow::Stream<cpu>* s = ctx.get_stream<cpu>();
     Resource rsc = ResourceManager::Get()->Request(ctx.run_ctx.get_ctx(),
         ResourceRequest(ResourceRequest::kTempSpace));
     NDArray out_nd = outputs[0];
     mxnet::ndarray::ElementwiseSum<cpu>(s, rsc, inputs, &out_nd);
+#if MXNET_USE_MKLDNN == 1
+  } else if (IsMKLDNNData(inputs)) {
+    MKLDNNSumForward(attrs, ctx, inputs, req[0], outputs[0]);
+  } else if (common::ContainsOnlyStorage(inputs, kDefaultStorage)) {
+    FallBackCompute(ElementWiseSumCompute<cpu>, attrs, ctx, inputs, req, outputs);
+#endif
   } else {
     LogUnimplementedOp(attrs, ctx, inputs, req, outputs);
   }
@@ -118,7 +149,9 @@ MXNET_ADD_SPARSE_OP_ALIAS(ElementWiseSum)
 The storage type of ``add_n`` output depends on storage types of inputs
 
 - add_n(row_sparse, row_sparse, ..) = row_sparse
-- otherwise, ``add_n`` generates output with default storage
+- add_n(default, csr, default) = default
+- add_n(any input combinations longer than 4 (>4) with at least one default type) = default
+- otherwise, ``add_n`` falls all inputs back to default storage and generates default storage
 
 )doc" ADD_FILELINE)
 .set_attr_parser(ParamParser<ElementWiseSumParam>)
@@ -146,6 +179,9 @@ The storage type of ``add_n`` output depends on storage types of inputs
   [](const NodeAttrs& attrs) {
     return std::vector<ResourceRequest>{ResourceRequest::kTempSpace};
   })
+#if MXNET_USE_MKLDNN == 1
+.set_attr<bool>("TIsMKLDNN", true)
+#endif
 .set_attr<nnvm::FInferShape>("FInferShape", ElementWiseSumShape)
 .set_attr<nnvm::FInferType>("FInferType", ElementWiseSumType)
 .set_attr<FInferStorageType>("FInferStorageType", ElementWiseSumForwardInferStorageType)

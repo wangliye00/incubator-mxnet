@@ -37,18 +37,21 @@
 # choice of compiler
 #--------------------
 
+ifndef CC
 export CC = gcc
+endif
+ifndef CXX
 export CXX = g++
+endif
+ifndef NVCC
 export NVCC = nvcc
+endif
 
 # whether compile with options for MXNet developer
 DEV = 0
 
 # whether compile with debug
 DEBUG = 0
-
-# whether compile with profiler
-USE_PROFILER =
 
 # whether to turn on segfault signal handler to log the stack trace
 USE_SIGNAL_HANDLER =
@@ -95,20 +98,8 @@ USE_LIBJPEG_TURBO_PATH = NONE
 # use openmp for parallelization
 USE_OPENMP = 1
 
-# MKL ML Library for Intel CPU/Xeon Phi
-# Please refer to MKL_README.md for details
-
-# MKL ML Library folder, need to be root for /usr/local
-# Change to User Home directory for standard user
-# For USE_BLAS!=mkl only
-MKLML_ROOT=/usr/local
-
-# whether use MKL2017 library
-USE_MKL2017 = 0
-
-# whether use MKL2017 experimental feature for high performance
-# Prerequisite USE_MKL2017=1
-USE_MKL2017_EXPERIMENTAL = 0
+# whether use MKL-DNN library
+USE_MKLDNN = 0
 
 # whether use NNPACK library
 USE_NNPACK = 0
@@ -147,9 +138,18 @@ endif
 ARCH := $(shell uname -a)
 ifneq (,$(filter $(ARCH), armv6l armv7l powerpc64le ppc64le aarch64))
 	USE_SSE=0
+	USE_F16C=0
 else
 	USE_SSE=1
 endif
+
+#----------------------------
+# F16C instruction support for faster arithmetic of fp16 on CPU
+#----------------------------
+# For distributed training with fp16, this helps even if training on GPUs
+# If left empty, checks CPU support and turns it on.
+# For cross compilation, please check support for F16C on target device and turn off if necessary.
+USE_F16C =
 
 #----------------------------
 # distributed computing
@@ -179,8 +179,20 @@ USE_OPERATOR_TUNING = 1
 # Use gperftools if found
 USE_GPERFTOOLS = 1
 
+# path to gperftools (tcmalloc) library in case of a non-standard installation
+USE_GPERFTOOLS_PATH =
+
+# Link gperftools statically
+USE_GPERFTOOLS_STATIC =
+
 # Use JEMalloc if found, and not using gperftools
 USE_JEMALLOC = 1
+
+# path to jemalloc library in case of a non-standard installation
+USE_JEMALLOC_PATH =
+
+# Link jemalloc statically
+USE_JEMALLOC_STATIC =
 
 #----------------------------
 # additional operators

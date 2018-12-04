@@ -35,6 +35,8 @@ In the rest of this document, we list routines provided by the `ndarray.random` 
     normal
     poisson
     uniform
+    multinomial
+    shuffle
     mxnet.random.seed
 ```
 
@@ -49,6 +51,7 @@ In the rest of this document, we list routines provided by the `ndarray.random` 
 
 .. automodule:: mxnet.random
     :members:
+    :noindex:
 
 ```
 

@@ -25,11 +25,6 @@
 */
 
 #include "./convolution_v1-inl.h"
-#if MXNET_USE_MKL2017 == 1
-#include <mkl_memory.h>
-#include "./mkl/mkl_memory-inl.h"
-#include "./mkl/mkl_convolution-inl.h"
-#endif  // MXNET_USE_MKL2017
 #if MXNET_USE_NNPACK == 1
 #include "./nnpack/nnpack_convolution-inl.h"
 #endif  // MXNET_USE_NNPACK
@@ -43,7 +38,7 @@ Operator* CreateOp<cpu>(ConvolutionV1Param param, int dtype,
                         std::vector<TShape> *in_shape,
                         std::vector<TShape> *out_shape,
                         Context ctx) {
-  Operator *op = NULL;
+  Operator *op = nullptr;
   MSHADOW_REAL_TYPE_SWITCH(dtype, DType, {
     op = new ConvolutionV1Op<cpu, DType>(param);
   })

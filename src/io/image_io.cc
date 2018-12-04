@@ -143,11 +143,8 @@ void ImdecodeImpl(int flag, bool to_rgb, void* data, size_t size,
   cv::Mat dst;
   if (out->is_none()) {
     cv::Mat res = cv::imdecode(buf, flag);
-    if (res.empty()) {
-      LOG(INFO) << "Decoding failed. Invalid image file.";
-      *out = NDArray();
-      return;
-    }
+    CHECK(!res.empty()) << "Decoding failed. Invalid image file.";
+
     *out = NDArray(mshadow::Shape3(res.rows, res.cols, flag == 0 ? 1 : 3),
                    Context::CPU(), false, mshadow::kUint8);
     dst = cv::Mat(out->shape()[0], out->shape()[1], flag == 0 ? CV_8U : CV_8UC3,
@@ -189,6 +186,8 @@ void Imdecode(const nnvm::NodeAttrs& attrs,
 
   uint8_t* str_img = inputs[0].data().dptr<uint8_t>();
   size_t len = inputs[0].shape().Size();
+  CHECK(len > 0) << "Input cannot be an empty buffer";
+
   TShape oshape(3);
   oshape[2] = param.flag == 0 ? 1 : 3;
   if (get_jpeg_size(str_img, len, &oshape[1], &oshape[0])) {
@@ -206,7 +205,7 @@ void Imdecode(const nnvm::NodeAttrs& attrs,
       ImdecodeImpl(param.flag, param.to_rgb, str_img, len,
                    const_cast<NDArray*>(&ndout));
     }, ndout.ctx(), {ndin.var()}, {ndout.var()},
-    FnProperty::kNormal, 0, PROFILER_MESSAGE("Imdecode"));
+    FnProperty::kNormal, 0, "Imdecode");
 #else
   LOG(FATAL) << "Build with USE_OPENCV=1 for image io.";
 #endif  // MXNET_USE_OPENCV
@@ -245,7 +244,7 @@ void Imread(const nnvm::NodeAttrs& attrs,
       ImdecodeImpl(param.flag, param.to_rgb, buff.get(), fsize,
                    const_cast<NDArray*>(&ndout));
     }, ndout.ctx(), {}, {ndout.var()},
-    FnProperty::kNormal, 0, PROFILER_MESSAGE("Imread"));
+    FnProperty::kNormal, 0, "Imread");
 #else
   LOG(FATAL) << "Build with USE_OPENCV=1 for image io.";
 #endif  // MXNET_USE_OPENCV

@@ -24,6 +24,8 @@
 */
 #include <time.h>
 #include <dmlc/logging.h>
+#include <dmlc/thread_group.h>
+#include <dmlc/omp.h>
 #include <gtest/gtest.h>
 #include <mxnet/engine.h>
 #include <dmlc/timer.h>
@@ -33,6 +35,7 @@
 #include <vector>
 
 #include "../src/engine/engine_impl.h"
+#include "../include/test_util.h"
 
 /**
  * present the following workload
@@ -116,6 +119,23 @@ double EvaluateWorloads(const std::vector<Workload>& workloads,
     engine->WaitForAll();
   }
   return dmlc::GetTime() - t;
+}
+
+TEST(Engine, start_stop) {
+  const int num_engine = 3;
+  std::vector<mxnet::Engine*> engine(num_engine);
+  engine[0] = mxnet::engine::CreateNaiveEngine();
+  engine[1] = mxnet::engine::CreateThreadedEnginePooled();
+  engine[2] = mxnet::engine::CreateThreadedEnginePerDevice();
+  std::string type_names[3] = {"NaiveEngine", "ThreadedEnginePooled", "ThreadedEnginePerDevice"};
+
+  for (int i = 0; i < num_engine; ++i) {
+    LOG(INFO) << "Stopping: " << type_names[i];
+    engine[i]->Stop();
+    LOG(INFO) << "Stopped: " << type_names[i] << " Starting...";
+    engine[i]->Start();
+    LOG(INFO) << "Started: " << type_names[i] << " Done...";
+  }
 }
 
 TEST(Engine, RandSumExpr) {
@@ -254,3 +274,117 @@ TEST(Engine, basics) {
   oprs.clear();
   LOG(INFO) << "All pass";
 }
+
+TEST(Engine, VarVersion) {
+  const size_t num_engines = 3;
+  std::vector<mxnet::Engine*> engines(num_engines);
+  engines[0] = mxnet::engine::CreateNaiveEngine();
+  engines[1] = mxnet::engine::CreateThreadedEnginePooled();
+  engines[2] = mxnet::engine::CreateThreadedEnginePerDevice();
+  std::string type_names[3] = {"NaiveEngine", "ThreadedEnginePooled", "ThreadedEnginePerDevice"};
+  for (size_t k = 0; k < num_engines; ++k) {
+    auto engine = engines[k];
+    std::vector<mxnet::Engine::OprHandle> oprs;
+
+    LOG(INFO) << "Testing var as a read dependency in " << type_names[k];
+    auto var = engine->NewVariable();
+    EXPECT_EQ(var->version(), 0U);
+    for (int i = 0; i < 10; ++i) {
+      oprs.push_back(engine->NewOperator(
+          [i](mxnet::RunContext ctx, mxnet::Engine::CallbackOnComplete cb) {
+            Foo(ctx, i);
+            cb();
+          },
+          {var}, {}));
+      engine->Push(oprs.at(i), mxnet::Context{});
+    }
+    engine->WaitForAll();
+    EXPECT_EQ(var->version(), 0U);
+    for (auto&& i : oprs) {
+      engine->DeleteOperator(i);
+    }
+    engine->DeleteVariable([](mxnet::RunContext) {}, mxnet::Context{}, var);
+    engine->WaitForAll();
+
+    LOG(INFO) << "Testing var as a write dependency in " << type_names[k];
+    var = engine->NewVariable();
+    EXPECT_EQ(var->version(), 0U);
+    oprs.clear();
+    for (int i = 0; i < 10; ++i) {
+      oprs.push_back(engine->NewOperator(
+          [i](mxnet::RunContext ctx, mxnet::Engine::CallbackOnComplete cb) {
+            Foo(ctx, i);
+            cb();
+          },
+          {}, {var}));
+      engine->Push(oprs.at(i), mxnet::Context{});
+    }
+    engine->WaitForAll();
+    EXPECT_EQ(var->version(), 10U);
+    for (auto&& i : oprs) {
+      engine->DeleteOperator(i);
+    }
+    engine->DeleteVariable([](mxnet::RunContext) {}, mxnet::Context{}, var);
+    engine->WaitForAll();
+
+    var = nullptr;
+    oprs.clear();
+    LOG(INFO) << "All pass";
+  }
+}
+
+#ifdef _OPENMP
+
+struct TestSaveAndRestoreOMPState {
+  TestSaveAndRestoreOMPState() {
+    omp_set_dynamic(false);
+  }
+  ~TestSaveAndRestoreOMPState() {
+    omp_set_num_threads(nthreads_);
+    omp_set_dynamic(dynamic_);
+  }
+  const int nthreads_ = omp_get_max_threads();
+  const int dynamic_ = omp_get_dynamic();
+};
+
+/*!
+ * \brief This test checks that omp_set_num_threads implementation has thread-scope
+ */
+TEST(Engine, omp_threading_count_scope) {
+  TestSaveAndRestoreOMPState omp_state;
+  const int THREAD_COUNT = 10;
+  std::shared_ptr<dmlc::ManualEvent> ready = std::make_shared<dmlc::ManualEvent>();
+  std::shared_ptr<dmlc::ThreadGroup> threads = std::make_shared<dmlc::ThreadGroup>();
+  std::atomic<int> counter(0), correct(0);
+  omp_set_dynamic(0);
+  for (int x = 0; x < THREAD_COUNT; ++x) {
+    std::string name = "thread: ";
+    name += std::to_string(x + 1);
+    ++counter;
+    threads->create(name, false,
+                    [x, &counter, &correct](std::shared_ptr<dmlc::ManualEvent> ready_ptr) -> int {
+                      const int thread_count = x + 1;
+                      omp_set_num_threads(thread_count);
+                      --counter;
+                      ready_ptr->wait();
+                      CHECK_EQ(omp_get_max_threads(), thread_count);
+                      #pragma omp parallel for
+                      for (int i = 0; i < 100; ++i) {
+                        if (i == 50) {
+                          const int current_threads = omp_get_num_threads();
+                          if (current_threads == thread_count) {
+                            ++correct;
+                          }
+                        }
+                      }
+                      return 0;
+                    }, ready);
+  }
+  while (counter.load() > 0) {
+    usleep(100);
+  }
+  ready->signal();
+  threads->join_all();
+  GTEST_ASSERT_EQ(correct.load(), THREAD_COUNT);
+}
+#endif  // _OPENMP

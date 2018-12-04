@@ -45,7 +45,7 @@
 #include <utility>
 #include "./c_api_common.h"
 #include "../operator/custom/custom-inl.h"
-#include "../engine/profiler.h"
+#include "../operator/tensor/matrix_op-inl.h"
 
 using namespace mxnet;
 
@@ -91,44 +91,16 @@ int MXRandomSeed(int seed) {
   API_END();
 }
 
+int MXRandomSeedContext(int seed, int dev_type, int dev_id) {
+  API_BEGIN();
+  Context ctx = Context::Create(static_cast<Context::DeviceType>(dev_type), dev_id);
+  mxnet::RandomSeed(ctx, seed);
+  API_END();
+}
+
 int MXNotifyShutdown() {
   API_BEGIN();
   Engine::Get()->NotifyShutdown();
-  API_END();
-}
-
-int MXSetProfilerConfig(int mode, const char* filename) {
-  // mode, kOnlySymbolic: 0, kAllOperator: 1
-  API_BEGIN();
-#if MXNET_USE_PROFILER
-  engine::Profiler::Get()->SetConfig(engine::Profiler::ProfilerMode(mode), std::string(filename));
-#else
-  LOG(FATAL) << "Need to compile with USE_PROFILER=1 for MXNet Profiler";
-#endif
-  API_END();
-}
-
-int MXDumpProfile() {
-  API_BEGIN();
-#if MXNET_USE_PROFILER
-  engine::Profiler *profiler = engine::Profiler::Get();
-  CHECK(profiler->IsEnableOutput())
-    << "Profiler haven't been run. Config and start profiler first";
-  engine::Profiler::Get()->DumpProfile();
-#else
-  LOG(FATAL) << "Need to compile with USE_PROFILER=1 for MXNet Profiler";
-#endif
-  API_END()
-}
-
-int MXSetProfilerState(int state) {
-  // state, kNotRunning: 0, kRunning: 1
-  API_BEGIN();
-#if MXNET_USE_PROFILER
-  engine::Profiler::Get()->SetState(engine::Profiler::ProfilerState(state));
-#else
-  LOG(FATAL) << "Need to compile with USE_PROFILER=1 for MXNet Profiler";
-#endif
   API_END();
 }
 
@@ -141,6 +113,29 @@ int MXSetNumOMPThreads(int thread_num) {
 int MXEngineSetBulkSize(int bulk_size, int* prev_bulk_size) {
   API_BEGIN();
   *prev_bulk_size = Engine::Get()->set_bulk_size(bulk_size);
+  API_END();
+}
+
+int MXGetGPUCount(int* out) {
+  API_BEGIN();
+  *out = Context::GetGPUCount();
+  API_END();
+}
+
+// Deprecated: use MXGetGPUMemoryInformation64() instead.
+int MXGetGPUMemoryInformation(int dev, int *free_mem, int *total_mem) {
+  API_BEGIN();
+  uint64_t free_mem64 = 0UL;
+  uint64_t total_mem64 = 0UL;
+  Context::GetGPUMemoryInformation(dev, &free_mem64, &total_mem64);
+  *free_mem = static_cast<int>(free_mem64);
+  *total_mem = static_cast<int>(total_mem64);
+  API_END();
+}
+
+int MXGetGPUMemoryInformation64(int dev, uint64_t *free_mem, uint64_t *total_mem) {
+  API_BEGIN();
+  Context::GetGPUMemoryInformation(dev, free_mem, total_mem);
   API_END();
 }
 
@@ -358,6 +353,40 @@ int MXNDArrayLoad(const char* fname,
   API_END();
 }
 
+int MXNDArrayLoadFromBuffer(const void *ndarray_buffer,
+                            size_t size,
+                            mx_uint *out_size,
+                            NDArrayHandle** out_arr,
+                            mx_uint *out_name_size,
+                            const char*** out_names) {
+  MXAPIThreadLocalEntry *ret = MXAPIThreadLocalStore::Get();
+  ret->ret_vec_str.clear();
+  API_BEGIN();
+  CHECK_NOTNULL(ndarray_buffer);
+  std::vector<NDArray> data;
+  std::vector<std::string> &names = ret->ret_vec_str;
+  {
+    std::unique_ptr<dmlc::MemoryFixedSizeStream> fi(new dmlc::MemoryFixedSizeStream(
+        const_cast<void*>(ndarray_buffer), size));
+    mxnet::NDArray::Load(fi.get(), &data, &names);
+  }
+  ret->ret_handles.resize(data.size());
+  for (size_t i = 0; i < data.size(); ++i) {
+    NDArray *ptr = new NDArray();
+    *ptr = data[i];
+    ret->ret_handles[i] = ptr;
+  }
+  ret->ret_vec_charp.resize(names.size());
+  for (size_t i = 0; i < names.size(); ++i) {
+    ret->ret_vec_charp[i] = names[i].c_str();
+  }
+  *out_size = static_cast<mx_uint>(data.size());
+  *out_arr = dmlc::BeginPtr(ret->ret_handles);
+  *out_name_size = static_cast<mx_uint>(names.size());
+  *out_names = dmlc::BeginPtr(ret->ret_vec_charp);
+  API_END();
+}
+
 int MXNDArrayFree(NDArrayHandle handle) {
   API_BEGIN();
   delete static_cast<NDArray*>(handle);
@@ -422,6 +451,23 @@ MXNET_DLL int MXNDArrayReshape(NDArrayHandle handle,
   API_END_HANDLE_ERROR(delete ptr);
 }
 
+MXNET_DLL int MXNDArrayReshape64(NDArrayHandle handle,
+                                 int ndim,
+                                 dim_t *dims,
+                                 bool reverse,
+                                 NDArrayHandle *out) {
+  NDArray *ptr = new NDArray();
+  API_BEGIN();
+  NDArray *arr = static_cast<NDArray*>(handle);
+  nnvm::Tuple<dim_t> shape(dims, dims+ndim);
+  CHECK_GT(arr->shape().Size(), 0) << "Source ndarray's shape is undefined. Input shape: "
+    << arr->shape();
+  TShape new_shape = mxnet::op::InferReshapeShape(shape, arr->shape(), reverse);
+  *ptr = arr->ReshapeWithRecord(new_shape);
+  *out = ptr;
+  API_END_HANDLE_ERROR(delete ptr);
+}
+
 int MXNDArrayGetStorageType(NDArrayHandle handle,
                      int *out_storage_type) {
   API_BEGIN();
@@ -461,6 +507,31 @@ int MXNDArrayGetData(NDArrayHandle handle,
     *out_pdata = arr->data().dptr_;
   } else {
     *out_pdata = nullptr;
+  }
+  API_END();
+}
+
+int MXNDArrayToDLPack(NDArrayHandle handle,
+                      DLManagedTensorHandle *out_dlpack) {
+  API_BEGIN();
+  NDArray *arr = static_cast<NDArray*>(handle);
+  *out_dlpack = arr->ToDLPack();
+  API_END();
+}
+
+int MXNDArrayFromDLPack(DLManagedTensorHandle dlpack,
+                        NDArrayHandle *out_handle) {
+  API_BEGIN();
+  *out_handle = new NDArray(NDArray::FromDLPack(
+              static_cast<DLManagedTensor*>(dlpack)));
+  API_END();
+}
+
+int MXNDArrayCallDLPackDeleter(DLManagedTensorHandle dlpack) {
+  API_BEGIN();
+  if (dlpack != nullptr) {
+    DLManagedTensor *p_dlpack = static_cast<DLManagedTensor*>(dlpack);
+    p_dlpack->deleter(p_dlpack);
   }
   API_END();
 }
@@ -842,15 +913,15 @@ int MXKVStorePull(KVStoreHandle handle,
     v_keys[i] = keys[i];
     v_vals[i] = static_cast<NDArray*>(vals[i]);
   }
-  static_cast<KVStore*>(handle)->Pull(v_keys, v_vals, priority);
+  static_cast<KVStore*>(handle)->Pull(v_keys, v_vals, priority, true);
   API_END();
 }
 
 int MXKVStorePullEx(KVStoreHandle handle,
-                  mx_uint num,
-                  const char** keys,
-                  NDArrayHandle* vals,
-                  int priority) {
+                    mx_uint num,
+                    const char** keys,
+                    NDArrayHandle* vals,
+                    int priority) {
   API_BEGIN();
   std::vector<std::string> v_keys(num);
   std::vector<NDArray*> v_vals(num);
@@ -858,7 +929,41 @@ int MXKVStorePullEx(KVStoreHandle handle,
     v_keys[i] = keys[i];
     v_vals[i] = static_cast<NDArray*>(vals[i]);
   }
-  static_cast<KVStore*>(handle)->Pull(v_keys, v_vals, priority);
+  static_cast<KVStore*>(handle)->Pull(v_keys, v_vals, priority, true);
+  API_END();
+}
+
+int MXKVStorePullWithSparse(KVStoreHandle handle,
+                            mx_uint num,
+                            const int* keys,
+                            NDArrayHandle* vals,
+                            int priority,
+                            bool ignore_sparse) {
+  API_BEGIN();
+  std::vector<int> v_keys(num);
+  std::vector<NDArray*> v_vals(num);
+  for (mx_uint i = 0; i < num; ++i) {
+    v_keys[i] = keys[i];
+    v_vals[i] = static_cast<NDArray*>(vals[i]);
+  }
+  static_cast<KVStore*>(handle)->Pull(v_keys, v_vals, priority, ignore_sparse);
+  API_END();
+}
+
+int MXKVStorePullWithSparseEx(KVStoreHandle handle,
+                              mx_uint num,
+                              const char** keys,
+                              NDArrayHandle* vals,
+                              int priority,
+                              bool ignore_sparse) {
+  API_BEGIN();
+  std::vector<std::string> v_keys(num);
+  std::vector<NDArray*> v_vals(num);
+  for (mx_uint i = 0; i < num; ++i) {
+    v_keys[i] = keys[i];
+    v_vals[i] = static_cast<NDArray*>(vals[i]);
+  }
+  static_cast<KVStore*>(handle)->Pull(v_keys, v_vals, priority, ignore_sparse);
   API_END();
 }
 
@@ -1257,7 +1362,6 @@ int MXRtcCudaKernelCall(CudaKernelHandle handle, int dev_id, void** args,
 #endif
   API_END();
 }
-
 
 int MXNDArrayGetSharedMemHandle(NDArrayHandle handle, int* shared_pid, int* shared_id) {
   API_BEGIN();

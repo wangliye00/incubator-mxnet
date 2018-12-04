@@ -42,7 +42,7 @@ class ImageLabelMap {
    * \param label_width predefined label_width
    */
   explicit ImageLabelMap(const char *path_imglist,
-                         mshadow::index_t label_width,
+                         index_t label_width,
                          bool silent) {
     this->label_width = label_width;
     image_index_.clear();
@@ -58,7 +58,7 @@ class ImageLabelMap {
       // skip space
       while (isspace(*p) && p != end) ++p;
       image_index_.push_back(static_cast<size_t>(atol(p)));
-      for (size_t i = 0; i < label_width; ++i) {
+      for (index_t i = 0; i < label_width; ++i) {
         // skip till space
         while (!isspace(*p) && p != end) ++p;
         // skip space
@@ -84,6 +84,14 @@ class ImageLabelMap {
         = idx2label_.find(imid);
     CHECK(it != idx2label_.end()) << "fail to find imagelabel for id " << imid;
     return mshadow::Tensor<cpu, 1>(it->second, mshadow::Shape1(label_width));
+  }
+  /*! \brief find a label for corresponding index, return vector as copy */
+  inline std::vector<float> FindCopy(size_t imid) const {
+    std::unordered_map<size_t, real_t*>::const_iterator it
+        = idx2label_.find(imid);
+    CHECK(it != idx2label_.end()) << "fail to find imagelabel for id " << imid;
+    const real_t *ptr = it->second;
+    return std::vector<float>(ptr, ptr + label_width);
   }
 
  private:
@@ -163,7 +171,7 @@ struct ImageRecParserParam : public dmlc::Parameter<ImageRecParserParam> {
 // Batch parameters
 struct BatchParam : public dmlc::Parameter<BatchParam> {
   /*! \brief label width */
-  index_t batch_size;
+  uint32_t batch_size;
   /*! \brief use round roubin to handle overflow batch */
   bool round_batch;
   // declare parameters
@@ -340,6 +348,7 @@ struct PrefetcherParam : public dmlc::Parameter<PrefetcherParam> {
       .add_enum("float32", mshadow::kFloat32)
       .add_enum("float64", mshadow::kFloat64)
       .add_enum("float16", mshadow::kFloat16)
+      .add_enum("int64", mshadow::kInt64)
       .add_enum("int32", mshadow::kInt32)
       .add_enum("uint8", mshadow::kUint8)
       .set_default(dmlc::optional<int>())

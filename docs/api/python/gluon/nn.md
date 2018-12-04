@@ -17,13 +17,14 @@ This document lists the neural network blocks in Gluon:
     :nosignatures:
 
     Dense
-    Activation
     Dropout
     BatchNorm
     InstanceNorm
-    LeakyReLU
+    LayerNorm
     Embedding
     Flatten
+    Lambda
+    HybridLambda
 ```
 
 
@@ -66,10 +67,25 @@ This document lists the neural network blocks in Gluon:
     ReflectionPad2D
 ```
 
+## Activation Layers
+
+
+```eval_rst
+.. autosummary::
+    :nosignatures:
+
+    Activation
+    LeakyReLU
+    PReLU
+    ELU
+    SELU
+    Swish
+```
+
 
 ## API Reference
 
-<script type="text/javascript" src='../../_static/js/auto_module_index.js'></script>
+<script type="text/javascript" src='../../../_static/js/auto_module_index.js'></script>
 
 ```eval_rst
 .. automodule:: mxnet.gluon.nn

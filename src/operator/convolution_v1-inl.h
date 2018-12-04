@@ -76,7 +76,11 @@ struct ConvolutionV1Param : public dmlc::Parameter<ConvolutionV1Param> {
     .describe("Number of group partitions. Equivalent to slicing input into num_group\n    "
               "partitions, apply convolution on each, then concatenate the results");
     DMLC_DECLARE_FIELD(workspace).set_default(1024).set_range(0, 8192)
-    .describe("Maximum tmp workspace allowed for convolution (MB).");
+    .describe("Maximum temporary workspace allowed for convolution (MB)."
+              "This parameter determines the effective batch size of the convolution "
+              "kernel, which may be smaller than the given batch size. "
+              "Also, the workspace will be automatically enlarged to make sure that we can "
+              "run the kernel with batch_size=1");
     DMLC_DECLARE_FIELD(no_bias).set_default(false)
     .describe("Whether to disable bias parameter.");
     DMLC_DECLARE_FIELD(cudnn_tune)
@@ -331,12 +335,10 @@ class ConvolutionV1Op : public Operator {
                                      oshape[2] * oshape[3]);
     // param_.workspace is in elements of sizeof(DType)
     // if param_.workspace is set to zero the nstep_ equals ishape[0] (batch)
-    nstep_ = std::max(
-        std::min(
-            static_cast<index_t>(
-                param_.workspace / (shape_colunit_.Size() + shape_dstunit_.Size())),
-            ishape[0]),
-        1U);
+    nstep_ = std::max<index_t>(
+        std::min(static_cast<index_t>(param_.workspace) /
+          (shape_colunit_.Size() + shape_dstunit_.Size()), ishape[0]),
+      1);
 
     mshadow::Shape<2> scol = mshadow::Shape2(shape_colunit_[0],
                                              shape_colunit_[1] * nstep_);
@@ -344,9 +346,6 @@ class ConvolutionV1Op : public Operator {
                                              shape_dstunit_[1],
                                              shape_dstunit_[2] * nstep_);
     index_t required_size = scol.Size() + sdst.Size();
-    CHECK_GE(param_.workspace, required_size)
-      << "\nMinimum workspace size: " << required_size * sizeof(DType) << " Bytes\n"
-      << "Given: " << param_.workspace * sizeof(DType) << " Bytes";
     return required_size;
   }
 
@@ -501,7 +500,7 @@ class ConvolutionV1Prop : public OperatorProperty {
     CHECK_GE(in_type->size(), 1);
     int dtype = (*in_type)[0];
     CHECK_NE(dtype, -1) << "First input must have specified type";
-    for (index_t i = 0; i < in_type->size(); ++i) {
+    for (size_t i = 0; i < in_type->size(); ++i) {
       if ((*in_type)[i] == -1) {
         (*in_type)[i] = dtype;
       } else {

@@ -77,10 +77,11 @@ USE_CUDNN = 0
 USE_OPENCV = 1
 
 # use openmp for parallelization
+# apple-clang by default does not have openmp built-in
 USE_OPENMP = 0
 
 # choose the version of blas you want to use
-# can be: mkl, blas, atlas, openblas
+# can be: mkl, blas, atlas, openblas, apple
 USE_BLAS = apple
 
 # whether use lapack during compilation
@@ -88,7 +89,7 @@ USE_BLAS = apple
 USE_LAPACK = 1
 
 # by default, disable lapack when using MKL
-# switch on when there is a full installation of MKL available (not just MKL2017/MKL_ML)
+# switch on when there is a full installation of MKL available (not just MKL_ML)
 ifeq ($(USE_BLAS), mkl)
 USE_LAPACK = 0
 endif

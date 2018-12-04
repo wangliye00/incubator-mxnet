@@ -6,9 +6,9 @@ Topics:
 * [Symbol Attributes](#symbol-attributes) describes how to attach attributes to symbols.
 * [Serialization](#serialization) explains how to save and load symbols.
 * [Executing Symbols](#executing-symbols) explains how to evaluate the symbols with data.
-* [Execution API Reference](http://mxnet.io/api/scala/docs/index.html#ml.dmlc.mxnet.Executor) documents the execution APIs.
+* [Execution API Reference](http://mxnet.incubator.apache.org/api/scala/docs/index.html#org.apache.mxnet.Executor) documents the execution APIs.
 * [Multiple Outputs](#multiple-outputs) explains how to configure multiple outputs.
-* [Symbol Creation API Reference](http://mxnet.io/api/scala/docs/index.html#ml.dmlc.mxnet.Symbol) documents functions.
+* [Symbol Creation API Reference](http://mxnet.incubator.apache.org/api/scala/docs/index.html#org.apache.mxnet.Symbol) documents functions.
 
 We also highly encourage you to read [Symbolic Configuration and Execution in Pictures](symbol_in_pictures.md).
 
@@ -20,14 +20,14 @@ You can configure the graphs either at the level of neural network layer operati
 The following example configures a two-layer neural network.
 
 ```scala
-    scala> import ml.dmlc.mxnet._
+    scala> import org.apache.mxnet._
     scala> val data = Symbol.Variable("data")
-    scala> val fc1 = Symbol.FullyConnected(name = "fc1")()(Map("data" -> data, "num_hidden" -> 128))
-    scala> val act1 = Symbol.Activation(name = "relu1")()(Map("data" -> fc1, "act_type" -> "relu"))
-    scala> val fc2 = Symbol.FullyConnected(name = "fc2")()(Map("data" -> act1, "num_hidden" -> 64))
-    scala> val net = Symbol.SoftmaxOutput(name = "out")()(Map("data" -> fc2))
+    scala> val fc1 = Symbol.api.FullyConnected(Some(data), num_hidden = 128, name = "fc1")
+    scala> val act1 = Symbol.api.Activation(Some(fc1), "relu", "relu1")
+    scala> val fc2 = Symbol.api.FullyConnected(some(act1), num_hidden = 64, name = "fc2")
+    scala> val net = Symbol.api.SoftmaxOutput(Some(fc2), name = "out")
     scala> :type net
-    ml.dmlc.mxnet.Symbol
+    org.apache.mxnet.Symbol
 ```
 
 The basic arithmetic operators (plus, minus, div, multiplication) are overloaded for
@@ -36,7 +36,7 @@ The basic arithmetic operators (plus, minus, div, multiplication) are overloaded
 The following example creates a computation graph that adds two inputs together.
 
 ```scala
-    scala> import ml.dmlc.mxnet._
+    scala> import org.apache.mxnet._
     scala> val a = Symbol.Variable("a")
     scala> val b = Symbol.Variable("b")
     scala> val c = a + b
@@ -48,8 +48,7 @@ You can add an attribute to a symbol by providing an attribute dictionary when y
 
 ```scala
     val data = Symbol.Variable("data", Map("mood"-> "angry"))
-    val op   = Symbol.Convolution()()(
-      Map("data" -> data, "kernel" -> "(1, 1)", "num_filter" -> 1, "mood"-> "so so"))
+    val op = Symbol.api.Convolution(Some(data), kernel = Shape(1, 1), num_filter = 1, attr = Map("mood" -> "so so"))
 ```
 For proper communication with the C++ backend, both the key and values of the attribute dictionary should be strings. To retrieve the attributes, use `attr(key)`:
 
@@ -79,12 +78,12 @@ To attach attributes, you can use ```AttrScope```. ```AttrScope``` automatically
 There are two ways to save and load the symbols. You can use the `mxnet.Symbol.save` and `mxnet.Symbol.load` functions to serialize the ```Symbol``` objects.
 The advantage of using `save` and `load` functions is that it is language agnostic and cloud friendly.
 The symbol is saved in JSON format. You can also get a JSON string directly using `mxnet.Symbol.toJson`.
-Refer to [API documentation](http://mxnet.io/api/scala/docs/index.html#ml.dmlc.mxnet.Symbol) for more details.
+Refer to [API documentation](http://mxnet.incubator.apache.org/api/scala/docs/index.html#org.apache.mxnet.Symbol) for more details.
 
 The following example shows how to save a symbol to an S3 bucket, load it back, and compare two symbols using a JSON string.
 
 ```scala
-    scala> import ml.dmlc.mxnet._
+    scala> import org.apache.mxnet._
     scala> val a = Symbol.Variable("a")
     scala> val b = Symbol.Variable("b")
     scala> val c = a + b
@@ -112,12 +111,12 @@ which is typically constructed by calling the [`simpleBind(<parameters>)`] metho
 To group the symbols together, use the [mxnet.symbol.Group](#mxnet.symbol.Group) function.
 
 ```scala
-    scala> import ml.dmlc.mxnet._
+    scala> import org.apache.mxnet._
     scala> val data = Symbol.Variable("data")
-    scala> val fc1 = Symbol.FullyConnected(name = "fc1")()(Map("data" -> data, "num_hidden" -> 128))
-    scala> val act1 = Symbol.Activation(name = "relu1")()(Map("data" -> fc1, "act_type" -> "relu"))
-    scala> val fc2 = Symbol.FullyConnected(name = "fc2")()(Map("data" -> act1, "num_hidden" -> 64))
-    scala> val net = Symbol.SoftmaxOutput(name = "out")()(Map("data" -> fc2))
+    scala> val fc1 = Symbol.api.FullyConnected(Some(data), num_hidden = 128, name = "fc1")
+    scala> val act1 = Symbol.api.Activation(Some(fc1), "relu", "relu1")
+    scala> val fc2 = Symbol.api.FullyConnected(Some(act1), num_hidden = 64, name = "fc2")
+    scala> val net = Symbol.api.SoftmaxOutput(Some(fc2), name = "out")
     scala> val group = Symbol.Group(fc1, net)
     scala> group.listOutputs()
     IndexedSeq[String] = ArrayBuffer(fc1_output, out_output)

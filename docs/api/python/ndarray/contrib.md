@@ -34,6 +34,8 @@ In the rest of this document, we list routines provided by the `ndarray.contrib`
 .. autosummary::
     :nosignatures:
 
+    AdaptiveAvgPooling2D
+    BilinearResize2D
     CTCLoss
     DeformableConvolution
     DeformablePSROIPooling
@@ -43,12 +45,27 @@ In the rest of this document, we list routines provided by the `ndarray.contrib`
     MultiProposal
     PSROIPooling
     Proposal
+    ROIAlign
     count_sketch
     ctc_loss
     dequantize
     fft
     ifft
     quantize
+    foreach
+    while_loop
+    cond
+    isinf
+    isfinite
+    isnan
+    index_copy
+    getnnz
+    edge_id
+    dgl_csr_neighbor_uniform_sample
+    dgl_csr_neighbor_non_uniform_sample
+    dgl_subgraph
+    dgl_adjacency
+    dgl_graph_compact
 ```
 
 ## API Reference

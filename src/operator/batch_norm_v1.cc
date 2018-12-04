@@ -49,6 +49,8 @@ DMLC_REGISTER_PARAMETER(BatchNormV1Param);
 MXNET_REGISTER_OP_PROPERTY(BatchNorm_v1, BatchNormV1Prop)
 .describe(R"code(Batch normalization.
 
+This operator is DEPRECATED. Perform BatchNorm on the input.
+
 Normalizes a data batch by mean and variance, and applies a scale ``gamma`` as
 well as offset ``beta``.
 
@@ -86,6 +88,9 @@ the output. It is often used during inference.
 
 Both ``gamma`` and ``beta`` are learnable parameters. But if ``fix_gamma`` is true,
 then set ``gamma`` to 1 and its gradient to 0.
+
+There's no sparse support for this operator, and it will exhibit problematic behavior if used with
+sparse tensors.
 
 )code" ADD_FILELINE)
 .add_argument("data", "NDArray-or-Symbol", "Input data to batch normalization")

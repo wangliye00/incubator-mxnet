@@ -25,6 +25,8 @@
 // this will be invoked by gcc and compile CPU version
 #include "./matrix_op-inl.h"
 #include "./elemwise_unary_op.h"
+#include "../nn/mkldnn/mkldnn_ops-inl.h"
+#include "../nn/mkldnn/mkldnn_base-inl.h"
 
 namespace mxnet {
 namespace op {
@@ -93,11 +95,13 @@ DMLC_REGISTER_PARAMETER(ClipParam);
 DMLC_REGISTER_PARAMETER(SliceAssignScalarParam);
 DMLC_REGISTER_PARAMETER(SliceParam);
 DMLC_REGISTER_PARAMETER(SliceAxisParam);
+DMLC_REGISTER_PARAMETER(SliceLikeParam);
 DMLC_REGISTER_PARAMETER(RepeatParam);
 DMLC_REGISTER_PARAMETER(TileParam);
 DMLC_REGISTER_PARAMETER(ReverseParam);
 DMLC_REGISTER_PARAMETER(StackParam);
 DMLC_REGISTER_PARAMETER(SqueezeParam);
+DMLC_REGISTER_PARAMETER(DepthToSpaceParam);
 
 NNVM_REGISTER_OP(Reshape)
 .add_alias("reshape")
@@ -106,7 +110,7 @@ NNVM_REGISTER_OP(Reshape)
 .. note:: ``Reshape`` is deprecated, use ``reshape``
 
 Given an array and a shape, this function returns a copy of the array in the new shape.
-The shape is a tuple of integers such as (2,3,4).The size of the new shape should be same as the size of the input array.
+The shape is a tuple of integers such as (2,3,4). The size of the new shape should be same as the size of the input array.
 
 Example::
 
@@ -181,6 +185,49 @@ If the argument `reverse` is set to 1, then the special values are inferred from
 .add_argument("data", "NDArray-or-Symbol", "Input data to reshape.")
 .add_arguments(ReshapeParam::__FIELDS__());
 
+static void FlattenEx(const nnvm::NodeAttrs& attrs,
+                      const OpContext& ctx,
+                      const std::vector<NDArray>& inputs,
+                      const std::vector<OpReqType>& req,
+                      const std::vector<NDArray>& outputs) {
+  CHECK_EQ(inputs.size(), 1U);
+  CHECK_EQ(outputs.size(), 1U);
+#if MXNET_USE_MKLDNN == 1
+  if (inputs[0].IsMKLDNNData()) {
+    MKLDNNCopy(attrs, ctx, inputs[0], req[0], outputs[0]);
+    // If the output is a special MKLDNN layout and the number of dimensions
+    // is larger than 2, we should use the default layout.
+    if (outputs[0].IsMKLDNNData() && inputs[0].shape().ndim() > 2)
+      const_cast<NDArray &>(outputs[0]).Reorder2Default();
+    return;
+  } else {
+    // This happens if inputs are supposed to be in MKLDNN format
+    // but MKLDNN doesn't support the data type or the shape. We're
+    // forced to convert it to the default format.
+    FallBackCompute(UnaryOp::IdentityCompute<cpu>, attrs, ctx, inputs, req, outputs);
+    return;
+  }
+#endif
+}
+
+static inline bool FlattenStorageType(const nnvm::NodeAttrs& attrs,
+                                   const int dev_mask,
+                                   DispatchMode* dispatch_mode,
+                                   std::vector<int> *in_attrs,
+                                   std::vector<int> *out_attrs) {
+  CHECK_EQ(in_attrs->size(), 1);
+  CHECK_EQ(out_attrs->size(), 1);
+  bool ret = ElemwiseStorageType<1, 1, false, false, false>(attrs, dev_mask, dispatch_mode,
+                                                            in_attrs, out_attrs);
+#if MXNET_USE_MKLDNN == 1
+  if (dev_mask == mshadow::cpu::kDevMask
+      && in_attrs->at(0) == kDefaultStorage
+      && out_attrs->at(0) == kDefaultStorage) {
+    *dispatch_mode = DispatchMode::kFComputeEx;
+  }
+#endif
+  return ret;
+}
 
 NNVM_REGISTER_OP(Flatten)
 .add_alias("flatten")
@@ -190,6 +237,9 @@ NNVM_REGISTER_OP(Flatten)
 
 For an input array with shape ``(d1, d2, ..., dk)``, `flatten` operation reshapes
 the input array into an output array of shape ``(d1, d2*...*dk)``.
+
+Note that the bahavior of this function is different from numpy.ndarray.flatten,
+which behaves similar to mxnet.ndarray.reshape((-1,)).
 
 Example::
 
@@ -211,8 +261,16 @@ Example::
 .set_num_outputs(1)
 .set_attr<nnvm::FInferShape>("FInferShape", FlattenShape)
 .set_attr<nnvm::FInferType>("FInferType", ElemwiseType<1, 1>)
+.set_attr<FInferStorageType>("FInferStorageType", FlattenStorageType)
 .set_attr<nnvm::FGradient>("FGradient", ElemwiseGradUseNone{ "_backward_copy" })
 .set_attr<FCompute>("FCompute<cpu>", UnaryOp::IdentityCompute<cpu>)
+.set_attr<FComputeEx>("FComputeEx<cpu>", FlattenEx)
+#if MXNET_USE_MKLDNN == 1
+.set_attr<bool>("TIsMKLDNN", true)
+.set_attr<FResourceRequest>("FResourceRequest", [](const NodeAttrs& n) {
+  return std::vector<ResourceRequest>{ResourceRequest::kTempSpace};
+})
+#endif
 .set_attr<nnvm::FInplaceOption>("FInplaceOption",
   [](const NodeAttrs& attrs) {
     return std::vector<std::pair<int, int> >{{0, 0}};
@@ -338,9 +396,9 @@ The storage type of ``slice`` output depends on storage types of inputs
 - otherwise, ``slice`` generates output with default storage
 
 .. note:: When input data storage type is csr, it only supports
-step=(), or step=(None,), or step=(1,) to generate a csr output.
-For other step parameter values, it falls back to slicing
-a dense tensor.
+   step=(), or step=(None,), or step=(1,) to generate a csr output.
+   For other step parameter values, it falls back to slicing
+   a dense tensor.
 
 Example::
 
@@ -457,6 +515,80 @@ NNVM_REGISTER_OP(_backward_slice_axis)
 .set_attr_parser(ParamParser<SliceAxisParam>)
 .set_attr<nnvm::TIsBackward>("TIsBackward", true)
 .set_attr<FCompute>("FCompute<cpu>", SliceAxisGrad_<cpu>);
+
+NNVM_REGISTER_OP(slice_like)
+.describe(R"code(Slices a region of the array like the shape of another array.
+
+This function is similar to ``slice``, however, the `begin` are always `0`s
+and `end` of specific axes are inferred from the second input `shape_like`.
+
+Given the second `shape_like` input of ``shape=(d_0, d_1, ..., d_n-1)``,
+a ``slice_like`` operator with default empty `axes`, it performs the
+following operation:
+
+`` out = slice(input, begin=(0, 0, ..., 0), end=(d_0, d_1, ..., d_n-1))``.
+
+When `axes` is not empty, it is used to speficy which axes are being sliced.
+
+Given a 4-d input data, ``slice_like`` operator with ``axes=(0, 2, -1)``
+will perform the following operation:
+
+`` out = slice(input, begin=(0, 0, 0, 0), end=(d_0, None, d_2, d_3))``.
+
+Note that it is allowed to have first and second input with different dimensions,
+however, you have to make sure the `axes` are specified and not exceeding the
+dimension limits.
+
+For example, given `input_1` with ``shape=(2,3,4,5)`` and `input_2` with
+``shape=(1,2,3)``, it is not allowed to use:
+
+`` out = slice_like(a, b)`` because ndim of `input_1` is 4, and ndim of `input_2`
+is 3.
+
+The following is allowed in this situation:
+
+`` out = slice_like(a, b, axes=(0, 2))``
+
+Example::
+
+  x = [[  1.,   2.,   3.,   4.],
+       [  5.,   6.,   7.,   8.],
+       [  9.,  10.,  11.,  12.]]
+
+  y = [[  0.,   0.,   0.],
+       [  0.,   0.,   0.]]
+
+  slice_like(x, y) = [[ 1.,  2.,  3.]
+                      [ 5.,  6.,  7.]]
+  slice_like(x, y, axes=(0, 1)) = [[ 1.,  2.,  3.]
+                                   [ 5.,  6.,  7.]]
+  slice_like(x, y, axes=(0)) = [[ 1.,  2.,  3.,  4.]
+                                [ 5.,  6.,  7.,  8.]]
+  slice_like(x, y, axes=(-1)) = [[  1.,   2.,   3.]
+                                 [  5.,   6.,   7.]
+                                 [  9.,  10.,  11.]]
+)code" ADD_FILELINE)
+.set_num_inputs(2)
+.set_num_outputs(1)
+.set_attr_parser(ParamParser<SliceLikeParam>)
+.set_attr<nnvm::FListInputNames>("FListInputNames",
+  [](const NodeAttrs& attrs) {
+    return std::vector<std::string>{"data", "shape_like"};
+  })
+.set_attr<nnvm::FInferShape>("FInferShape", SliceLikeShape)
+.set_attr<nnvm::FInferType>("FInferType", ElemwiseType<2, 1>)
+.set_attr<nnvm::FGradient>("FGradient", ElemwiseGradUseNone{"_backward_slice_like"})
+.set_attr<FCompute>("FCompute<cpu>", SliceLikeForward<cpu>)
+.add_argument("data", "NDArray-or-Symbol", "Source input")
+.add_argument("shape_like", "NDArray-or-Symbol", "Shape like input")
+.add_arguments(SliceLikeParam::__FIELDS__());
+
+NNVM_REGISTER_OP(_backward_slice_like)
+.set_num_inputs(1)
+.set_num_outputs(2)
+.set_attr_parser(ParamParser<SliceLikeParam>)
+.set_attr<nnvm::TIsBackward>("TIsBackward", true)
+.set_attr<FCompute>("FCompute<cpu>", SliceLikeBackward<cpu>);
 
 NNVM_REGISTER_OP(clip)
 MXNET_ADD_SPARSE_OP_ALIAS(clip)
@@ -769,7 +901,7 @@ Examples::
 .set_attr<FCompute>("FCompute<cpu>", UnaryOp::IdentityCompute<cpu>)
 .set_attr<nnvm::FGradient>("FGradient", ElemwiseGradUseNone{"_backward_squeeze"})
 .add_argument("data", "NDArray-or-Symbol[]", "data to squeeze")
-.add_arguments(StackParam::__FIELDS__());
+.add_arguments(SqueezeParam::__FIELDS__());
 
 NNVM_REGISTER_OP(_backward_squeeze)
 .set_num_inputs(1)
@@ -777,6 +909,112 @@ NNVM_REGISTER_OP(_backward_squeeze)
 .set_attr_parser(ParamParser<SqueezeParam>)
 .set_attr<nnvm::TIsBackward>("TIsBackward", true)
 .set_attr<FCompute>("FCompute<cpu>", UnaryOp::IdentityCompute<cpu>);
+
+NNVM_REGISTER_OP(depth_to_space)
+.describe(R"code(Rearranges(permutes) data from depth into blocks of spatial data.
+Similar to ONNX DepthToSpace operator:
+https://github.com/onnx/onnx/blob/master/docs/Operators.md#DepthToSpace.
+The output is a new tensor where the values from depth dimension are moved in spatial blocks 
+to height and width dimension. The reverse of this operation is ``space_to_depth``.
+
+.. math::
+
+    \begin{gather*}
+    x \prime = reshape(x, [N, block\_size, block\_size, C / (block\_size ^ 2), H * block\_size, W * block\_size]) \\
+    x \prime \prime = transpose(x \prime, [0, 3, 4, 1, 5, 2]) \\
+    y = reshape(x \prime \prime, [N, C / (block\_size ^ 2), H * block\_size, W * block\_size])
+    \end{gather*}
+
+where :math:`x` is an input tensor with default layout as :math:`[N, C, H, W]`: [batch, channels, height, width] 
+and :math:`y` is the output tensor of layout :math:`[N, C / (block\_size ^ 2), H * block\_size, W * block\_size]`
+
+Example::
+
+  x = [[[[0, 1, 2],
+         [3, 4, 5]],
+        [[6, 7, 8],
+         [9, 10, 11]],
+        [[12, 13, 14],
+         [15, 16, 17]],
+        [[18, 19, 20],
+         [21, 22, 23]]]]
+
+  depth_to_space(x, 2) = [[[[0, 6, 1, 7, 2, 8],
+                            [12, 18, 13, 19, 14, 20],
+                            [3, 9, 4, 10, 5, 11],
+                            [15, 21, 16, 22, 17, 23]]]]
+)code" ADD_FILELINE)
+.set_attr_parser(ParamParser<DepthToSpaceParam>)
+.set_num_inputs(1)
+.set_num_outputs(1)
+.set_attr<nnvm::FListInputNames>("FListInputNames",
+  [](const NodeAttrs& attrs) {
+    return std::vector<std::string>{"data"};
+  })
+.set_attr<nnvm::FInferShape>("FInferShape", DepthToSpaceOpShape)
+.set_attr<nnvm::FInferType>("FInferType", DepthToSpaceOpType)
+.set_attr<FCompute>("FCompute<cpu>", DepthToSpaceOpForward<cpu>)
+.set_attr<FResourceRequest>("FResourceRequest",
+  [](const NodeAttrs& n) {
+    return std::vector<ResourceRequest>{ResourceRequest::kTempSpace};
+})
+.set_attr<nnvm::FGradient>("FGradient", ElemwiseGradUseNone{"space_to_depth"})
+.add_argument("data", "NDArray-or-Symbol", "Input ndarray")
+.add_arguments(DepthToSpaceParam::__FIELDS__());
+
+NNVM_REGISTER_OP(space_to_depth)
+.describe(R"code(Rearranges(permutes) blocks of spatial data into depth.
+Similar to ONNX SpaceToDepth operator:
+https://github.com/onnx/onnx/blob/master/docs/Operators.md#SpaceToDepth 
+
+The output is a new tensor where the values from height and width dimension are 
+moved to the depth dimension. The reverse of this operation is ``depth_to_space``.
+
+.. math::
+
+    \begin{gather*}
+    x \prime = reshape(x, [N, C, H / block\_size, block\_size, W / block\_size, block\_size]) \\
+    x \prime \prime = transpose(x \prime, [0, 3, 5, 1, 2, 4]) \\
+    y = reshape(x \prime \prime, [N, C * (block\_size ^ 2), H / block\_size, W / block\_size])
+    \end{gather*}
+
+where :math:`x` is an input tensor with default layout as :math:`[N, C, H, W]`: [batch, channels, height, width] 
+and :math:`y` is the output tensor of layout :math:`[N, C * (block\_size ^ 2), H / block\_size, W / block\_size]`
+
+Example::
+
+  x = [[[[0, 6, 1, 7, 2, 8],
+         [12, 18, 13, 19, 14, 20],
+         [3, 9, 4, 10, 5, 11],
+         [15, 21, 16, 22, 17, 23]]]]
+  
+  
+  space_to_depth(x, 2) = [[[[0, 1, 2],
+                            [3, 4, 5]],
+                           [[6, 7, 8],
+                            [9, 10, 11]],
+                           [[12, 13, 14],
+                            [15, 16, 17]],
+                           [[18, 19, 20],
+                            [21, 22, 23]]]]
+)code" ADD_FILELINE)
+.set_attr_parser(ParamParser<DepthToSpaceParam>)
+.set_num_inputs(1)
+.set_num_outputs(1)
+.set_attr<nnvm::FListInputNames>("FListInputNames",
+  [](const NodeAttrs& attrs) {
+    return std::vector<std::string>{"data"};
+  })
+.set_attr<nnvm::FInferShape>("FInferShape", SpaceToDepthOpShape)
+.set_attr<nnvm::FInferType>("FInferType", SpaceToDepthOpType)
+.set_attr<FCompute>("FCompute<cpu>", SpaceToDepthOpForward<cpu>)
+.set_attr<FResourceRequest>("FResourceRequest",
+  [](const NodeAttrs& n) {
+    return std::vector<ResourceRequest>{ResourceRequest::kTempSpace};
+})
+.set_attr<nnvm::FGradient>("FGradient", ElemwiseGradUseNone{"depth_to_space"})
+.add_argument("data", "NDArray-or-Symbol", "Input ndarray")
+.add_arguments(DepthToSpaceParam::__FIELDS__());
 
 }  // namespace op
 }  // namespace mxnet

@@ -173,8 +173,9 @@ class RecordFileDataset(Dataset):
         Path to rec file.
     """
     def __init__(self, filename):
-        idx_file = os.path.splitext(filename)[0] + '.idx'
-        self._record = recordio.MXIndexedRecordIO(idx_file, filename, 'r')
+        self.idx_file = os.path.splitext(filename)[0] + '.idx'
+        self.filename = filename
+        self._record = recordio.MXIndexedRecordIO(self.idx_file, self.filename, 'r')
 
     def __getitem__(self, idx):
         return self._record.read_idx(self._record.keys[idx])
@@ -182,24 +183,18 @@ class RecordFileDataset(Dataset):
     def __len__(self):
         return len(self._record.keys)
 
-apache_repo_url = 'https://apache-mxnet.s3-accelerate.dualstack.amazonaws.com/'
 
 class _DownloadedDataset(Dataset):
     """Base class for MNIST, cifar10, etc."""
-    def __init__(self, repo_dir, root, transform):
-        self._root = os.path.expanduser(root)
-        self._repo_dir = repo_dir
+    def __init__(self, root, transform):
+        super(_DownloadedDataset, self).__init__()
         self._transform = transform
         self._data = None
         self._label = None
-
-        repo_url = os.environ.get('MXNET_GLUON_REPO', apache_repo_url)
-        if repo_url[-1] != '/':
-            repo_url = repo_url+'/'
-        self._base_url = repo_url
-
-        if not os.path.isdir(self._root):
-            os.makedirs(self._root)
+        root = os.path.expanduser(root)
+        self._root = root
+        if not os.path.isdir(root):
+            os.makedirs(root)
         self._get_data()
 
     def __getitem__(self, idx):
@@ -212,8 +207,3 @@ class _DownloadedDataset(Dataset):
 
     def _get_data(self):
         raise NotImplementedError
-
-    def _get_url(self, filename):
-        return '{base_url}gluon/dataset/{repo_dir}/{filename}'.format(base_url=self._base_url,
-                                                                      repo_dir=self._repo_dir,
-                                                                      filename=filename)

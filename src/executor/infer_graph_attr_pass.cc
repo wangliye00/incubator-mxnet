@@ -26,6 +26,7 @@
 #include <mxnet/graph_attr_types.h>
 #include "./exec_pass.h"
 #include "../operator/operator_common.h"
+#include "../common/exec_utils.h"
 
 namespace mxnet {
 namespace exec {
@@ -321,57 +322,6 @@ nnvm::Graph InferAttr(nnvm::Graph &&ret,
   return ret;
 }
 
-// inference fucntion for same type
-inline bool SameType(const nnvm::NodeAttrs& attrs,
-                     std::vector<int> *iattr,
-                     std::vector<int> *oattr) {
-  int def_v = -1;
-  for (int v : *oattr) {
-    if (v != -1) {
-      def_v = v; break;
-    }
-  }
-  if (def_v == -1) {
-    for (int v : *iattr) {
-      if (v != -1) {
-        def_v = v; break;
-      }
-    }
-  }
-  if (def_v == -1) return false;
-  for (int& v : *oattr) {
-    v = def_v;
-  }
-  for (int& v : *iattr) {
-    v = def_v;
-  }
-  return true;
-}
-
-inline bool DefaultStorageType(const nnvm::NodeAttrs& attrs,
-                               const int dev_mask,
-                               DispatchMode* dispatch_mode,
-                               std::vector<int> *iattr,
-                               std::vector<int> *oattr) {
-  bool fallback = false;
-  for (int& v : *oattr) {
-    if (v == -1) v = kDefaultStorage;
-    if (v != kDefaultStorage) fallback = true;
-  }
-  for (int& v : *iattr) {
-    if (v == -1) v = kDefaultStorage;
-    if (v != kDefaultStorage) fallback = true;
-  }
-  if (*dispatch_mode == DispatchMode::kUndefined) {
-    if (fallback) {
-      *dispatch_mode = DispatchMode::kFComputeFallback;
-    } else {
-      *dispatch_mode = DispatchMode::kFCompute;
-    }
-  }
-  return true;
-}
-
 nnvm::Graph InferShape(nnvm::Graph&& graph,
                        nnvm::ShapeVector&& shape_inputs,
                        const std::string& shape_attr_key) {
@@ -380,7 +330,7 @@ nnvm::Graph InferShape(nnvm::Graph&& graph,
     graph.attrs["shape_inputs"] = std::make_shared<any>(std::move(shape_inputs));
   }
   if (shape_attr_key.length() != 0) {
-    graph.attrs["shape_attr_key"] = std::make_shared<any>(std::move(shape_attr_key));
+    graph.attrs["shape_attr_key"] = std::make_shared<any>(shape_attr_key);
   }
   return InferAttr<nnvm::TShape, nnvm::FInferShape>(
       std::move(graph), nnvm::TShape(),
@@ -398,14 +348,14 @@ nnvm::Graph InferType(nnvm::Graph&& graph,
     graph.attrs["dtype_inputs"] = std::make_shared<any>(std::move(dtype_inputs));
   }
   if (dtype_attr_key.length() != 0) {
-    graph.attrs["dtype_attr_key"] = std::make_shared<any>(std::move(dtype_attr_key));
+    graph.attrs["dtype_attr_key"] = std::make_shared<any>(dtype_attr_key);
   }
   return InferAttr<int, nnvm::FInferType>(
       std::move(graph), -1,
       "FInferType", "dtype_inputs", "dtype_attr_key",
       "dtype", "dtype_num_unknown_nodes",
       [](const int t) { return t == -1; },
-      SameType, true, nullptr);
+      common::SameType, true, nullptr);
 }
 
 nnvm::Graph InferStorageType(nnvm::Graph&& graph,
@@ -416,12 +366,7 @@ nnvm::Graph InferStorageType(nnvm::Graph&& graph,
     graph.attrs["storage_type_inputs"] = std::make_shared<any>(std::move(storage_type_inputs));
   }
   if (storage_type_attr_key.length() != 0) {
-    graph.attrs["storage_type_attr_key"] = std::make_shared<any>(std::move(storage_type_attr_key));
-  }
-  // initialize unknown values for dispatch modes
-  if (graph.attrs.count("dispatch_mode") == 0) {
-    DispatchModeVector dispatch_modes(graph.indexed_graph().num_nodes(), DispatchMode::kUndefined);
-    graph.attrs["dispatch_mode"] = std::make_shared<any>(std::move(dispatch_modes));
+    graph.attrs["storage_type_attr_key"] = std::make_shared<any>(storage_type_attr_key);
   }
   // initialize unknown values for dispatch modes
   if (graph.attrs.count("dispatch_mode") == 0) {
@@ -443,39 +388,12 @@ nnvm::Graph InferStorageType(nnvm::Graph&& graph,
       "FInferStorageType", "storage_type_inputs", "storage_type_attr_key",
       "storage_type", "storage_type_num_unknown_nodes",
       [](const int t) { return t == -1; },
-      DefaultStorageType, false, "dispatch_mode", DispatchMode::kVariable);
+      common::DefaultStorageType, false, "dispatch_mode", DispatchMode::kVariable);
 
   // log the storage types and dispatch modes of the graph
-  bool log_verbose = dmlc::GetEnv("MXNET_INFER_STORAGE_TYPE_VERBOSE_LOGGING", false);
+  static bool log_verbose = dmlc::GetEnv("MXNET_INFER_STORAGE_TYPE_VERBOSE_LOGGING", false);
   if (log_verbose) {
-    const auto &idx = ret.indexed_graph();
-    const auto& vstorage_type = ret.GetAttr<StorageTypeVector>("storage_type");
-    const auto& dispatch_modes = ret.GetAttr<DispatchModeVector>("dispatch_mode");
-    uint32_t node_start = 0, node_end = idx.num_nodes();
-    if (ret.attrs.count("node_range")) {
-      const auto& range = ret.GetAttr<std::pair<uint32_t, uint32_t> >("node_range");
-      node_start = range.first;
-      node_end = range.second;
-    }
-    for (uint32_t nid = node_start; nid < node_end; ++nid) {
-      const auto& inode = idx[nid];
-      if (inode.source->is_variable()) {
-        LOG(INFO) << "node " << nid << " var";
-      } else {
-        LOG(INFO) << "node " << nid << " " << inode.source->attrs.op->name
-                  << ": " << common::dispatch_mode_string(dispatch_modes[nid]);
-        for (const auto& e : inode.inputs) {
-          auto eid = idx.entry_id(e);
-          LOG(INFO) << "\t\tinput " << eid << ": "
-                    << common::stype_string(vstorage_type[eid]);
-        }
-        for (uint32_t index = 0; index < inode.source->num_outputs(); ++index) {
-          uint32_t eid = idx.entry_id(nid, index);
-          LOG(INFO) << "\t\toutput " << eid << ": "
-                    << common::stype_string(vstorage_type[eid]);
-        }
-      }
-    }
+    common::LogInferStorage(ret);
   }
   return ret;
 }

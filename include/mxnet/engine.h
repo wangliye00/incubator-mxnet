@@ -25,7 +25,6 @@
 #ifndef MXNET_ENGINE_H_
 #define MXNET_ENGINE_H_
 
-#include <dmlc/base.h>
 #if DMLC_USE_CXX11
 #include <algorithm>
 #include <memory>
@@ -41,8 +40,26 @@ class Engine;
 
 /*! \brief namespace of engine internal types. */
 namespace engine {
-/*! \brief Internal representation of variable. */
-struct Var;
+/*! \brief base class of engine variables.*/
+struct Var {
+  virtual size_t version() {
+    return version_;
+  }
+  virtual ~Var() = default;
+  /*!
+   * \brief cast variable to derived type T
+   * \tparam T the type we want to cast into.
+   * \return A casted variable.
+   */
+  template <typename T>
+  inline T* Cast();
+  /*!
+   * \brief version number of the var. Every time the object it is associated with
+   * is modified, the version number is incremented by 1.
+   */
+  size_t version_{0};
+};  // struct Var
+
 /*! \brief Internal representation of operator.  */
 struct Opr;
 /*! \brief Variable pointer type, usually hold by user used to specify dependencies. */
@@ -87,7 +104,9 @@ enum class FnProperty {
   /*! \brief Asynchronous function call */
   kAsync,
   /*! \brief Delete variable call */
-  kDeleteVar
+  kDeleteVar,
+  /*! \brief Prioritized sync operation on GPU */
+  kGPUPrioritized
 };  // enum class FnProperty
 
 /*!
@@ -141,13 +160,15 @@ class MXNET_API Engine {
    * \param mutable_vars The variables that current operation will mutate.
    * \param prop Property of the function.
    * \param opr_name The operator name.
+   * \param wait Whether this is a WaitForVar operation
    * \return The new operator allocated.
    */
   virtual OprHandle NewOperator(AsyncFn fn,
                                 std::vector<VarHandle> const& const_vars,
                                 std::vector<VarHandle> const& mutable_vars,
                                 FnProperty prop = FnProperty::kNormal,
-                                const char* opr_name = nullptr) = 0;
+                                const char* opr_name = nullptr,
+                                bool wait = false) = 0;
   /*!
    * \brief Delete the given operator.
    * \param op The operator to delete.
@@ -176,13 +197,15 @@ class MXNET_API Engine {
    * \param prop Property of the function.
    * \param priority Priority of the action, as hint to the engine.
    * \param opr_name The operator name.
+   * \param wait Whether this is a WaitForVar operation
    */
   virtual void PushAsync(AsyncFn exec_fun, Context exec_ctx,
                          std::vector<VarHandle> const& const_vars,
                          std::vector<VarHandle> const& mutable_vars,
                          FnProperty prop = FnProperty::kNormal,
                          int priority = 0,
-                         const char* opr_name = nullptr) = 0;
+                         const char* opr_name = nullptr,
+                         bool wait = false) = 0;
   /*!
    * \brief Schedule the deletion of a variable.
    *

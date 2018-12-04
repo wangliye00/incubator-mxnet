@@ -35,6 +35,8 @@ In the rest of this document, we list routines provided by the `symbol.random` p
     normal
     poisson
     uniform
+    multinomial
+    shuffle
     mxnet.random.seed
 ```
 
@@ -46,6 +48,7 @@ In the rest of this document, we list routines provided by the `symbol.random` p
 
 .. automodule:: mxnet.symbol.random
     :members:
+    :noindex:
 
 .. automodule:: mxnet.random
     :members:

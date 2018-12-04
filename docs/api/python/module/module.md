@@ -176,7 +176,7 @@ additional functionality. We summarize them in this section.
 .. autosummary::
     :nosignatures:
 
-    BucketModule.switch_bucket
+    BucketingModule.switch_bucket
 ```
 
 ### Class `SequentialModule`
@@ -190,7 +190,7 @@ additional functionality. We summarize them in this section.
 
 ## API Reference
 
-<script type="text/javascript" src='../../_static/js/auto_module_index.js'></script>
+<script type="text/javascript" src='../../../_static/js/auto_module_index.js'></script>
 
 ```eval_rst
 .. autoclass:: mxnet.module.BaseModule

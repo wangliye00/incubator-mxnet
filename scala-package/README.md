@@ -1,7 +1,7 @@
 <img src=https://raw.githubusercontent.com/dmlc/dmlc.github.io/master/img/logo-m/mxnet2.png width=135/> Deep Learning for Scala/Java
 =====
 
-[![Build Status](https://travis-ci.org/dmlc/mxnet.svg?branch=master)](https://travis-ci.org/dmlc/mxnet)
+[![Build Status](http://jenkins.mxnet-ci.amazon-ml.com/job/incubator-mxnet/job/master/badge/icon)](http://jenkins.mxnet-ci.amazon-ml.com/job/incubator-mxnet/job/master/)
 [![GitHub license](http://dmlc.github.io/img/apache2.svg)](./LICENSE)
 
 Here you find the MXNet Scala Package!
@@ -15,15 +15,17 @@ It brings flexible and efficient GPU/CPU computing and state-of-art deep learnin
 Install
 ------------
  
-Technically, all you need is the `mxnet-full_2.10-{arch}-{xpu}-0.1.1.jar` in your classpath.
+Technically, all you need is the `mxnet-full_2.11-{arch}-{xpu}-{version}.jar` in your classpath.
 It will automatically extract the native library to a tempfile and load it.
+You can find the pre-built jar file in [here](https://search.maven.org/search?q=g:org.apache.mxnet)
+ and also our nightly build package [here](https://repository.apache.org/#nexus-search;gav~org.apache.mxnet~)
 
 Currently we provide `linux-x86_64-gpu`, `linux-x86_64-cpu` and `osx-x86_64-cpu`. Support for Windows will come soon.
-Use the following dependency in maven, change the artifactId according to your own architecture, e.g., `mxnet-full_2.10-osx-x86_64-cpu` for OSX (and cpu-only).
+Use the following dependency in maven, change the artifactId according to your own architecture, e.g., `mxnet-full_2.11-osx-x86_64-cpu` for OSX (and cpu-only).
 
 ```HTML
 <dependency>
-  <groupId>ml.dmlc.mxnet</groupId>
+  <groupId>org.apache.mxnet</groupId>
   <artifactId>mxnet-full_2.10-linux-x86_64-gpu</artifactId>
   <version>0.1.1</version>
 </dependency>
@@ -33,7 +35,7 @@ You can also use `mxnet-core_2.10-0.1.1.jar` and put the compiled native library
 
 ```HTML
 <dependency>
-  <groupId>ml.dmlc.mxnet</groupId>
+  <groupId>org.apache.mxnet</groupId>
   <artifactId>mxnet-core_2.10</artifactId>
   <version>0.1.1</version>
 </dependency>
@@ -45,7 +47,7 @@ Refer to the next section for how to build it from the very source.
 Build
 ------------
 
-Checkout the [Installation Guide](http://mxnet.io/get_started/setup.html) contains instructions to install mxnet.
+Checkout the [Installation Guide](http://mxnet.incubator.apache.org/install/index.html) contains instructions to install mxnet.
 Then you can compile the Scala Package by
 
 ```bash
@@ -55,13 +57,14 @@ make scalapkg
 (Optional) run unit/integration tests by
 
 ```bash
-make scalatest
+make scalaunittest
+make scalaintegrationtest
 ```
 
 Or run a subset of unit tests by, e.g.,
 
 ```bash
-make SCALA_TEST_ARGS=-Dsuites=ml.dmlc.mxnet.NDArraySuite scalatest
+make SCALA_TEST_ARGS=-Dsuites=org.apache.mxnet.NDArraySuite scalaunittest
 ```
 
 If everything goes well, you will find jars for `assembly`, `core` and `example` modules.
@@ -72,7 +75,7 @@ Once you've downloaded and unpacked MNIST dataset to `./data/`, run the training
 ```bash
 java -Xmx4G -cp \
   scala-package/assembly/{your-architecture}/target/*:scala-package/examples/target/*:scala-package/examples/target/classes/lib/* \
-  ml.dmlc.mxnet.examples.imclassification.TrainMnist \
+  org.apache.mxnet.examples.imclassification.TrainMnist \
   --data-dir=./data/ \
   --num-epochs=10 \
   --network=mlp \
@@ -80,13 +83,13 @@ java -Xmx4G -cp \
 ```
 
 If you've compiled with `USE_DIST_KVSTORE` enabled, the python tools in `mxnet/tracker` can be used to launch distributed training.
-The following command runs the above example using 2 worker nodes (and 2 server nodes) in local. Refer to [Distributed Training](http://mxnet.io/faq/multi_devices.html) for more details.
+The following command runs the above example using 2 worker nodes (and 2 server nodes) in local. Refer to [Distributed Training](http://mxnet.incubator.apache.org/how_to/multi_devices.html) for more details.
 
 ```bash
 tracker/dmlc_local.py -n 2 -s 2 \
   java -Xmx4G -cp \
   scala-package/assembly/{your-architecture}/target/*:scala-package/examples/target/*:scala-package/examples/target/classes/lib/* \
-  ml.dmlc.mxnet.examples.imclassification.TrainMnist \
+  org.apache.mxnet.examples.imclassification.TrainMnist \
   --data-dir=./data/ \
   --num-epochs=10 \
   --network=mlp \
@@ -98,11 +101,11 @@ Change the arguments and have fun!
 
 Usage
 -------
-Here is a Scala example of what training a simple 3-layer multilayer perceptron on MNIST looks like. You can download the MNIST dataset using [get_mnist_data script](https://github.com/dmlc/mxnet/blob/master/scala-package/core/scripts/get_mnist_data.sh).
+Here is a Scala example of what training a simple 3-layer multilayer perceptron on MNIST looks like. You can download the MNIST dataset using [get_mnist_data script](https://github.com/apache/incubator-mxnet/blob/master/scala-package/core/scripts/get_mnist_data.sh).
 
 ```scala
-import ml.dmlc.mxnet._
-import ml.dmlc.mxnet.optimizer.SGD
+import org.apache.mxnet._
+import org.apache.mxnet.optimizer.SGD
 
 // model definition
 val data = Symbol.Variable("data")
@@ -187,4 +190,4 @@ Release
 
 License
 -------
-MXNet Scala Package is licensed under [Apache-2](https://github.com/dmlc/mxnet/blob/master/scala-package/LICENSE) license.
+MXNet Scala Package is licensed under [Apache-2](https://github.com/apache/incubator-mxnet/blob/master/scala-package/LICENSE) license.

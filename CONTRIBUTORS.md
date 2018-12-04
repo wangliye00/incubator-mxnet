@@ -29,6 +29,7 @@ The committers are the granted write access to the project.
 * [Chiyuan Zhang](https://github.com/pluskid)
   - Chiyuan is the creator of MXNet Julia Package.
 * [Junyuan Xie](https://github.com/piiswrong)
+* [Haibin Lin](https://github.com/eric-haibin-lin)
 * [Qiang Kou](https://github.com/thirdwing)
   - KK is a R ninja, he makes mxnet available for R users.
 * [Tong He](https://github.com/hetong007)
@@ -39,6 +40,15 @@ The committers are the granted write access to the project.
   - Zixuan is one of major maintainers of mxnet scala package.
 * [Yuan Tang](https://github.com/terrytangyuan)
   - Yuan is one of major maintainers of mxnet scala package.
+* [Chris Olivier](https://github.com/cjolivier01)
+* [Sergey Kolychev](https://github.com/sergeykolychev)
+  - Sergey is original author and current maintainer of Perl5 interface.
+* [Naveen Swamy](https://github.com/nswamy)
+* [Marco de Abreu](https://github.com/marcoabreu)
+ - Marco is the creator of the current MXNet CI.
+* [Carin Meier](https://github.com/gigasquid)
+  - Carin created and is the current maintainer for the Clojure interface.
+
 
 ### Become a Committer
 MXNet is a opensource project and we are actively looking for new committers
@@ -47,6 +57,7 @@ who are willing to help maintaining and leading the project. Committers come fro
 * Willing to actively spend time on maintaining and leading the project.
 
 New committers will be proposed by current committers, with support from more than two of current committers.
+
 
 List of Contributors
 --------------------
@@ -127,8 +138,6 @@ List of Contributors
 * [Freddy Chua](https://github.com/freddycct)
 * [Jie Zhang](https://github.com/luoyetx)
 * [Leonard Lausen](https://github.com/leezu)
-* [Sergey Kolychev](https://github.com/sergeykolychev)
-  - Sergey is original author and current maintainer of Perl5 interface.
 * [Robert Stone](https://github.com/tlby)
 * [Pedro Larroy](https://github.com/larroy)
 * [Jun Wu](https://github.com/reminisce)
@@ -150,8 +159,49 @@ List of Contributors
 * [Manu Seth](https://github.com/mseth10/)
 * [Calum Leslie](https://github.com/calumleslie)
 * [Andre Tamm](https://github.com/andretamm)
-* [Marco de Abreu](https://github.com/marcoabreu)
- - Marco is the creator of the current MXNet CI.
 * [Julian Salazar](https://github.com/JulianSlzr)
 * [Meghna Baijal](https://github.com/mbaijal)
 * [Tao Hu](https://github.com/dongzhuoyao)
+* [Sorokin Evgeniy](https://github.com/TheTweak)
+* [dwSun](https://github.com/dwSun/)
+* [David Braude](https://github.com/dabraude/)
+* [Nick Robinson](https://github.com/nickrobinson)
+* [Kan Wu](https://github.com/wkcn)
+* [Rahul Huilgol](https://github.com/rahul003)
+* [Anirudh Subramanian](https://github.com/anirudh2290/)
+* [Zheqin Wang](https://github.com/rasefon)
+* [Thom Lane](https://github.com/thomelane)
+* [Sina Afrooze](https://github.com/safrooze)
+* [Sergey Sokolov](https://github.com/Ishitori)
+* [Thomas Delteil](https://github.com/ThomasDelteil)
+* [Jesse Brizzi](https://github.com/jessebrizzi)
+* [Hang Zhang](http://hangzh.com)
+* [Lin Yuan](https://github.com/apeforest)
+* [Kou Ding](https://github.com/chinakook)
+* [Istvan Fehervari](https://github.com/ifeherva)
+* [Aaron Markham](https://github.com/aaronmarkham)
+* [Sam Skalicky](https://github.com/samskalicky)
+* [Per Goncalves da Silva](https://github.com/perdasilva)
+* [Zhijingcheng Yu](https://github.com/jasonyu1996)
+* [Cheng-Che Lee](https://github.com/stu1130)
+* [Chaitanya Bapat](https://github.com/ChaiBapchya)
+* [LuckyPigeon](https://github.com/LuckyPigeon)
+* [Anton Chernov](https://github.com/lebeg)
+* [Denisa Roberts](https://github.com/D-Roberts)
+* [Dick Carter](https://github.com/DickJC123)
+* [Rahul Padmanabhan](https://github.com/rahul3)
+* [Yuxi Hu](https://github.com/yuxihu)
+* [Harsh Patel](https://github.com/harshp8l)
+
+Label Bot
+---------
+* [mxnet-label-bot](https://github.com/mxnet-label-bot)
+  - mxnet-label-bot provides users with the functionality to manage labels for Issues/Pull Requests on the repository
+  - To use me, comment:
+    - @mxnet-label-bot add [specify comma separated labels here]
+    - @mxnet-label-bot remove [specify comma separated labels here]
+    - @mxnet-label-bot update [specify comma separated labels here]  
+      (i.e. @mxnet-label-bot update [Bug, Python])
+  
+  - Available label names which are supported: [Labels](https://github.com/apache/incubator-mxnet/labels)
+  - For further details: [My Wiki Page](https://cwiki.apache.org/confluence/display/MXNET/Machine+Learning+Based+GitHub+Bot)
